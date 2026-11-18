@@ -32,3 +32,8 @@ Data is cached under `trader/data/` (git-ignored). Run every script from the rep
 
 Caveats: about 60 days of intraday history is short. Expect live results below backtests, because of
 selection across variants and decay after publication. Next step: multi-year minute data.
+- **Three-index version (SPY/QQQ/IWM thirds via UPRO/TQQQ/TNA, same rules, 2,312 nights):** +17.0% a year,
+  Sharpe 0.92, max drawdown -27%, worst night -8.4%, worst year -12%, Sharpe 0.99 / 0.86 in the two halves.
+  More stable than any single index.
+- **Downtrends:** below the 200-day average, the next night averaged about zero (t between -0.1 and +1.2), so
+  holding inverse funds overnight has no support. Cash is the default in downtrends.
