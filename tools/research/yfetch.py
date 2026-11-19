@@ -52,6 +52,12 @@ def fetch_bars(sym, interval, rng):
            for k in ("open", "high", "low", "close", "volume")}
     t = np.array(t, dtype=np.int64)
     ok = ~np.isnan(arr["close"])
+    if interval == "1d":
+        # Yahoo can return monthly/quarterly bars (stamped 00:00 local) for long ranges; keep true daily bars only
+        from zoneinfo import ZoneInfo
+        import datetime as _dt
+        ny = ZoneInfo("America/New_York")
+        ok &= np.array([_dt.datetime.fromtimestamp(int(x), ny).strftime("%H:%M") == "09:30" for x in t], dtype=bool)
     return {"t": t[ok], **{k: v[ok] for k, v in arr.items()},
             "gmtoffset": res.get("meta", {}).get("gmtoffset", -18000),
             "instrumentType": res.get("meta", {}).get("instrumentType", "")}
