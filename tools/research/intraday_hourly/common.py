@@ -103,3 +103,37 @@ def log_exp(**kw):
     from registry import log
     kw.setdefault("author", AUTHOR)
     return log(**kw)
+
+
+def regime_below(dates, sym="SPY"):
+    """True on day t if sym's daily close at t-1 was below its 200-day SMA (the overnight model held cash for
+    that leg the night before t, so the leg's capital is settled and free during day t)."""
+    d1 = frame(sym, "1d")
+    d1 = d1[~d1.index.duplicated()].set_index("date")
+    close = d1.c
+    below = (close < close.rolling(200).mean()).shift(1)
+    return below.reindex(pd.Index(dates)).fillna(False).to_numpy(bool)
+
+
+def cash_fraction(dates):
+    """Fraction of the overnight model's three legs (SPY, QQQ, IWM) in cash the night before day t."""
+    return np.mean([regime_below(dates, s) for s in ("SPY", "QQQ", "IWM")], axis=0)
+
+
+def nw_slope(yv, xv, lags=None):
+    """OLS y = a + g x on a time series; returns (g, Newey-West t of g)."""
+    y = np.asarray(yv, float); x = np.asarray(xv, float)
+    ok = np.isfinite(y) & np.isfinite(x)
+    y, x = y[ok], x[ok]
+    n = len(y)
+    if lags is None:
+        lags = int(math.floor(4 * (n / 100) ** (2 / 9)))
+    xd = x - x.mean()
+    g = (xd @ (y - y.mean())) / (xd @ xd)
+    e = (y - y.mean()) - g * xd
+    u = xd * e
+    S = u @ u
+    for L in range(1, lags + 1):
+        S += 2 * (1 - L / (lags + 1)) * (u[L:] @ u[:-L])
+    se = math.sqrt(max(S, 1e-30)) / (xd @ xd)
+    return float(g), float(g / se)

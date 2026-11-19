@@ -1,6 +1,8 @@
 """Fetch 10 years of daily bars (+ dividend and split events) for the liquid universe, at most 3 threads.
 
   python3 tools/research/xsec_swing/fetch.py            # superset + ETFs; skips symbols already complete
+  python3 tools/research/xsec_swing/fetch.py --all      # also every name in trader/universe.txt (today's listings,
+                                                        # incl. those now below $5 / thin: survivorship mitigation)
 Bars are merged into trader/data/1d/<SYM>.npz through yfetch.save (the cache merges, never overwrites).
 Dividends/splits go to trader/data/1d_events/<SYM>.json ({"div": {epoch: amount}, "split": {epoch: ratio}}).
 """
@@ -66,10 +68,12 @@ def one(sym):
     return sym, "ok"
 
 
-def main(workers=3):
+def main(workers=3, everything=False):
     (ROOT / "1d").mkdir(parents=True, exist_ok=True)
     EV.mkdir(parents=True, exist_ok=True)
     syms = ETFS + [x["symbol"] for x in json.load(open(ROOT / "superset.json"))]
+    if everything:
+        syms += [l.split("|")[0].strip() for l in open("trader/universe.txt") if l.strip() and not l.startswith("#")]
     seen, todo = set(), []
     for s in syms:
         if s not in seen:
@@ -90,4 +94,4 @@ def main(workers=3):
 
 
 if __name__ == "__main__":
-    main()
+    main(everything="--all" in sys.argv)

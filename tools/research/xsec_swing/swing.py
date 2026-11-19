@@ -15,14 +15,17 @@ import numpy as np, pandas as pd
 
 
 def simulate(d, entry, priority, exit_fn, K=4, capital=1000.0, cost=0.0010, whole=True, mode="close",
-             max_hold=5, t0=0, gate=None, min_price=0.0):
+             max_hold=5, t0=0, gate=None, min_price=0.0, return_frac=False):
+    """Whole shares are counted in actual (unadjusted) shares: n = floor(alloc / actual price); the position is
+    then carried in split-adjusted units (n * F) so later splits do not distort it."""
     """entry: bool T x N (signal at close t); priority: T x N (lower = better);
     exit_fn(t, j, entry_t) -> bool, evaluated at the close of t for an open position (after max_hold check)."""
     T, N = d.C.shape
-    C, O, D = d.C, d.O, d.D
+    C, O, D, F = d.C, d.O, d.D, d.F
     cash = capital
     pos = {}          # j -> dict(sh, px, t_in, last)
     eq = np.full(T, np.nan)
+    cashf = np.full(T, np.nan)        # cash / equity at the close, after the day's exits and entries
     trades = []
     pending_exit, pending_entry = [], []
     half = cost / 2
@@ -43,7 +46,7 @@ def simulate(d, entry, priority, exit_fn, K=4, capital=1000.0, cost=0.0010, whol
                 if not np.isfinite(px) or px <= 0:
                     continue
                 alloc = min(eq_open / K, cash)
-                sh = math.floor(alloc / (px * (1 + half))) if whole else alloc / (px * (1 + half))
+                sh = math.floor(alloc / (px * F[t, j] * (1 + half))) * F[t, j] if whole else alloc / (px * (1 + half))
                 if sh <= 0:
                     continue
                 cash -= sh * px * (1 + half)
@@ -84,7 +87,7 @@ def simulate(d, entry, priority, exit_fn, K=4, capital=1000.0, cost=0.0010, whol
                             continue
                         px = C[t, j]
                         alloc = min(equity / K, cash)
-                        sh = math.floor(alloc / (px * (1 + half))) if whole else alloc / (px * (1 + half))
+                        sh = math.floor(alloc / (px * F[t, j] * (1 + half))) * F[t, j] if whole else alloc / (px * (1 + half))
                         if sh <= 0:
                             continue
                         cash -= sh * px * (1 + half)
@@ -93,6 +96,7 @@ def simulate(d, entry, priority, exit_fn, K=4, capital=1000.0, cost=0.0010, whol
                     free = K - (len(pos) - len(pending_exit))
                     pending_entry = [j for j in cand if j not in pos][:max(0, free) + 3]
         eq[t] = cash + sum(p["sh"] * p["last"] for p in pos.values())
+        cashf[t] = cash / eq[t] if mode == "close" else (cash - 0.0) / eq[t]
     e = pd.Series(eq, index=d.dates).ffill()
     r = e.pct_change().fillna(0.0)
     r = r[r.index >= d.dates[t0]]
@@ -104,6 +108,8 @@ def simulate(d, entry, priority, exit_fn, K=4, capital=1000.0, cost=0.0010, whol
         tr["sym"] = d.syms[tr.j.values]
         tr["date_in"] = d.dates[tr.t_in.values]
         tr["date_out"] = d.dates[tr.t_out.values]
+    if return_frac:
+        return r, tr, pd.Series(cashf, index=d.dates)
     return r, tr
 
 

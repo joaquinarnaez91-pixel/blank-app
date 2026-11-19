@@ -4,7 +4,8 @@ Conventions
 - Panel rows are trading days t. A decision "at the close of t" uses data through C[t] (a 15:58 proxy).
 - Overnight return realized on the morning of t+1: RON[t+1] = (O[t+1] + D[t+1]) / C[t] - 1 (dividend on its ex-date).
 - Intraday return of day t: RID[t] = C[t] / O[t] - 1. Close-to-close total return RCC[t] = (C[t] + D[t]) / C[t-1] - 1.
-- Universe at decision time t: common stocks (no ETFs), top K by mean dollar volume over t-60..t-1, C[t-1] >= $5.
+- Universe at decision time t: common stocks (no ETFs), top K by mean dollar volume over t-60..t-1, actual
+  (unadjusted) close of t-1 >= $5.
 - Daily strategy series are indexed by the date the return is realized (the morning of t+1 for overnight trades).
 """
 import sys, math
@@ -40,8 +41,9 @@ class Data:
         self.dates = P["dates"]
         self.syms = P["syms"]
         self.col = {s: j for j, s in enumerate(self.syms)}
-        self.O, self.H, self.L, self.C, self.V, self.D = (P[k] for k in "OHLCVD")
+        self.O, self.H, self.L, self.C, self.V, self.D, self.F = (P[k] for k in "OHLCVDF")
         self.is_etf = P["is_etf"]
+        self.CA = self.C * self.F               # actual traded (unadjusted) close, for price filters and whole shares
         C, O, D = self.C, self.O, self.D
         Cp = shift(C, 1)
         self.RON = (O + D) / Cp - 1            # overnight, realized at the open of row t
@@ -50,11 +52,18 @@ class Data:
         dv = C * self.V
         self.ADV = shift(rolling_mean(dv, 60, 40), 1)   # through t-1
         adv = np.where(self.is_etf[None, :], np.nan, self.ADV)
-        adv = np.where(shift(C, 1) >= 5, adv, np.nan)
+        adv = np.where(shift(self.CA, 1) >= 5, adv, np.nan)          # actual price >= $5 at t-1
+        self._adv_ok = adv
         self.adv_rank = pd.DataFrame(adv).rank(axis=1, ascending=False, method="first").values  # 1 = most liquid
 
-    def universe(self, k=500, lo=0):
-        r = self.adv_rank
+    def universe(self, k=500, lo=0, names=None):
+        """Point-in-time top-k by dollar volume; `names` restricts the candidate set first (e.g. today's superset)."""
+        if names is None:
+            r = self.adv_rank
+        else:
+            keep = np.isin(self.syms, list(names))
+            adv = np.where(keep[None, :], self._adv_ok, np.nan)
+            r = pd.DataFrame(adv).rank(axis=1, ascending=False, method="first").values
         return (r > lo) & (r <= k)
 
     def s(self, sym):
@@ -69,6 +78,7 @@ def index_model(d, target=0.015, cap=3.0, cost=0.0004, use_funds=True):
     index exposure = min(cap, target / 20-night std of the index's overnight return), bought at the close,
     sold at the next open. Returns the sleeve's nightly return realized on the morning of t+1, indexed by t+1."""
     out = np.zeros(len(d.dates))
+    expo_all = np.zeros(len(d.dates))
     legs = {}
     for idx, fund in (("SPY", "UPRO"), ("QQQ", "TQQQ"), ("IWM", "TNA")):
         i, f = d.s(idx), d.s(fund)
@@ -85,8 +95,11 @@ def index_model(d, target=0.015, cap=3.0, cost=0.0004, use_funds=True):
         leg = np.nan_to_num(leg)
         legs[fund] = shift(leg, 1)                                          # index by realization date t+1
         out += leg / 3.0
+        expo_all += w / 3.0
     ser = pd.Series(shift(out, 1), index=d.dates).fillna(0.0)
-    return ser, {k: pd.Series(v, index=d.dates).fillna(0.0) for k, v in legs.items()}
+    legs = {k: pd.Series(v, index=d.dates).fillna(0.0) for k, v in legs.items()}
+    legs["_expo"] = pd.Series(shift(expo_all, 1), index=d.dates).fillna(0.0)   # fraction of the sleeve in 3x funds that night
+    return ser, legs
 
 
 def halves(r):

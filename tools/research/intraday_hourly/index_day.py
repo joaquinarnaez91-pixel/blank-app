@@ -202,7 +202,7 @@ def run():
     return results, nA, D, dates, start
 
 
-def main(do_log=False):
+def main():
     results, nA, D, dates, start = run()
     fams = {}
     for (fam, name, i), r in results.items():
@@ -226,5 +226,50 @@ def main(do_log=False):
     return S, out, nA
 
 
+def log_all(S, nA):
+    """One registry record per experiment group (A, D1..D4), with the best series and the pre-specified EW3 rows."""
+    S = S.copy()
+    S["fam"] = S["name"].str.split(":").str[0]
+    desc = {
+        "A": ("Index gap -> same-day continuation vs reversal (z-buckets x first-hour RV), 3x funds",
+              "Overnight index gaps continue (or reverse) intraday depending on size and first-hour volume",
+              "36 diagnostic cells (gap z-bucket x RV bucket x entry) on the index + |z|>1.5 follow/fade via 3x funds, "
+              "9:30 or 10:30 entry, 5 bp"),
+        "D1": ("Index day trades by 200-day regime (bull/bear 3x fund, 9:30 or 10:30 -> close)",
+               "Below the 200-day (overnight model in cash) the day session has a usable drift",
+               "below/above 200d x bull/bear fund x 9:30/10:30 entry, 5 bp"),
+        "D2": ("Rebound days below the 200-day (gap down / prior day down) via 3x bull funds",
+               "In downtrends, down-gaps or down days are followed by intraday rebounds",
+               "conditions {gap<0, prev day down, gap<-0.5%} x 9:30/10:30 entry, below 200d only, 5 bp"),
+        "D3": ("Index gap fill after large overnight gaps via 3x funds (fill-or-close exits)",
+               "Large index gaps partially fill intraday",
+               "|gap| > {0.5%,1%} x exit {fill (limit at fund prior close +1c), close} x regime {all, below, above}"
+               " + one-sided gap-down version, 5 bp"),
+        "D4": ("Last-half-hour / 90-minute reversal of the day-so-far via 3x funds, by regime",
+               "The day-so-far move reverses into the close (fade at 15:30 or 14:30)",
+               "fade from 15:30 or 14:30 open x regime {all, below, above}, 5 bp"),
+    }
+    for fam, (name, hyp, meth) in desc.items():
+        g = S[S.fam == fam]
+        best = g.loc[g.sharpe.idxmax()]
+        ew = g[g["name"].str.endswith("[EW3]")]
+        bew = ew.loc[ew.sharpe.idxmax()]
+        nvar = len(g) + (nA if fam == "A" else 0)
+        log_exp(family="index_daytime_hourly", name=name, hypothesis=hyp,
+                data="Yahoo 1h SPY/QQQ/IWM + UPRO/SPXU/TQQQ/SQQQ/TNA/TZA, 706 full sessions 2024-01-16..2026-11-17; "
+                     "200-day SMA from daily closes through t-1",
+                method=meth + "; each rule on 3 indices + 1/3-each basket; daily-series t, NW t, DSR within group",
+                variants=int(nvar),
+                metrics={"best_SR": float(best.sharpe), "best_t": float(best.t), "best_mean_bp": float(best.mean_bp),
+                         "best_DSR": float(best.dsr_p), "best_EW3_SR": float(bew.sharpe), "best_EW3_t": float(bew.t),
+                         "n_pass": int(sum(passes(r) for r in g.to_dict("records")))},
+                verdict="rejected",
+                notes=f"best series: {best['name']} (halves {best.h1_bp:+.1f}/{best.h2_bp:+.1f} bp); best basket: "
+                      f"{bew['name']}. Nothing passes t>3 / DSR>0.9 / both halves.",
+                code=CODE + "index_day.py")
+
+
 if __name__ == "__main__":
-    main("--log" in sys.argv)
+    S, out, nA = main()
+    if "--log" in sys.argv:
+        log_all(S, nA)

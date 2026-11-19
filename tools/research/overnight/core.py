@@ -20,8 +20,11 @@ from bars import frame  # noqa: E402
 
 DIV = Path("trader/data/div")
 COST_RT = 0.0004  # round trip on the 3x fund dollars, overnight
-# carry model (see tracking.py): 3x fund overnight return = 3 r_on - (A * rf + B) * cal_days / 365
-CARRY_A, CARRY_B = 2.0, 0.015
+# carry model fitted in tracking.py on UPRO/TQQQ/TNA 2009-2026 (per-night slope on rf: 2.22, 2.40, 2.63;
+# intercepts ~0): 3x fund overnight return = 3 r_on - CARRY_A * rf * fwd_days / 365, where fwd_days = calendar
+# days from the morning's date to the next trading date (the NAV struck that day books those days' accrual,
+# so the Thursday->Friday night bears the weekend's financing; data: Friday mornings show ~2.5x the drag).
+CARRY_A, CARRY_B = 2.4, 0.0
 
 
 def daily(sym):
@@ -76,13 +79,14 @@ def panel(syms=("SPY", "QQQ", "IWM"), start=None):
         P[k] = pd.DataFrame({s: fr[s][k].reindex(idx) for s in syms})
     cd = pd.Series(idx, index=idx).diff().dt.days
     P["cal_days"] = cd
+    P["fwd_days"] = (-pd.Series(idx, index=idx).diff(-1).dt.days).fillna(1.0)
     P["rf"] = rf_series(idx).shift(1)  # rate known at the decision (previous close)
     return P
 
 
 def carry(P, a=CARRY_A, b=CARRY_B):
-    """Per-night financing+fee drag of a 3x fund (fraction of fund value) for night t."""
-    return (a * P["rf"].fillna(0.0) + b) * P["cal_days"].fillna(1.0) / 365.0
+    """Per-night financing drag of a 3x fund (fraction of fund value) for night t (close t-1 -> open t)."""
+    return (a * P["rf"].fillna(0.0) + b) * P["fwd_days"].fillna(1.0) / 365.0
 
 
 # ---------------------------------------------------------------- the current live spec
