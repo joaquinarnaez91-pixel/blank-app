@@ -58,9 +58,18 @@ def fetch_bars(sym, interval, rng):
 
 
 def save(sym, interval, d):
+    """Merge into any cached file (union by timestamp, newer values win) so a shorter fetch never
+    erases a longer history."""
     p = ROOT / interval / (ysym(sym) + ".npz")
-    np.savez_compressed(p, t=d["t"], o=d["open"], h=d["high"], l=d["low"], c=d["close"], v=d["volume"],
-                        itype=np.array(d["instrumentType"]))
+    t, o, h, l, c, v = d["t"], d["open"], d["high"], d["low"], d["close"], d["volume"]
+    if p.exists():
+        z = np.load(p)
+        keep = ~np.isin(z["t"].astype(np.int64), t.astype(np.int64))
+        t = np.concatenate([z["t"][keep], t]); o = np.concatenate([z["o"][keep], o]); h = np.concatenate([z["h"][keep], h])
+        l = np.concatenate([z["l"][keep], l]); c = np.concatenate([z["c"][keep], c]); v = np.concatenate([z["v"][keep], v])
+        order = np.argsort(t, kind="stable")
+        t, o, h, l, c, v = t[order], o[order], h[order], l[order], c[order], v[order]
+    np.savez_compressed(p, t=t, o=o, h=h, l=l, c=c, v=v, itype=np.array(d["instrumentType"]))
 
 
 def load(sym, interval):
