@@ -1,5 +1,11 @@
 # Research log
 
+**Where things stand (Nov 19, 2026).** Live: the overnight index model (`tools/overnight.py`), half the sleeve
+per night because a cash account cannot spend unsettled sale proceeds. Daytime: paper forward test only.
+Every experiment, including failures, is in `registry.jsonl` (`python3 tools/research/registry.py` prints it
+with trial counts); rules for a valid test are in `STANDARDS.md`; agent reports are in `reports/`.
+Live monitoring: `monitor.py` (execution tracking, expected range, Bayesian edge estimate).
+
 Tools for testing day-trading and overnight rules on free Yahoo data before any rule is traded.
 Data is cached under `trader/data/` (git-ignored). Run every script from the repository root.
 
@@ -37,3 +43,17 @@ selection across variants and decay after publication. Next step: multi-year min
   More stable than any single index.
 - **Downtrends:** below the 200-day average, the next night averaged about zero (t between -0.1 and +1.2), so
   holding inverse funds overnight has no support. Cash is the default in downtrends.
+
+## Findings, Nov 19 2026 (main session)
+
+- **Cash-account settlement halves the overnight model.** Robinhood's buying power excludes unsettled sale
+  proceeds, so money sold at the 9:30 open cannot buy again at 15:58 the same day. Feasible spec: half the
+  sleeve per night. With actual 3x fund prices (fees and financing included), 10 years: full capital every
+  night +13.6%/yr, Sharpe 0.79, max drawdown -30% (needs limited margin, no borrowing); half capital
+  +7.0%/yr, Sharpe 0.79, max drawdown -16%, worst night -$42; holding around the clock while above the
+  200-day average: Sharpe 0.57 (rejected).
+- **Execution is not a hidden cost.** Buying at ~15:58 instead of the official close: -1.5 to +0.6 bp on
+  average; selling at the 9:30 first print vs the official open: -0.5 bp. Noise about 15 bp per leg per night.
+- **Live evidence accrues slowly.** At about 2.7 bp mean and 54 bp standard deviation per night on the sleeve,
+  15 live nights move the edge estimate about 4% of the way from the prior. The live monitor therefore watches
+  execution tracking first, and judges P&L against the backtest's expected range.
