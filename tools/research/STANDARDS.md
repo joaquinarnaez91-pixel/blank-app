@@ -30,3 +30,10 @@ per day, halt at $500 cumulative realized loss. Since Nov 19, 2026 overnight hol
 - `trader/data/1h/`  ~730 sessions (Dec 2023 on) of hourly bars for index/3x funds (bars start 9:30, 10:30 ... 15:30).
 - `trader/data/1d/`  daily bars (SPY, QQQ, IWM 10y; others as fetched).
 - Fetch more with `python3 tools/research/yfetch.py bars <interval> <range> SYM...`; pace requests (<= 4 threads).
+
+## Pilot tier (added Nov 19, 2026)
+A candidate that misses only the deflated-Sharpe hurdle narrowly (DSR >= 0.8) but has t > 3 on its untouched holdout,
+a published prior and the same sign in both halves may run a **capped live pilot** to measure what paper cannot:
+real fills and costs. Rules: pre-register the exact rules, size (at most half the sleeve), stops and the stop
+criteria in the registry before the first order; stay inside every owner limit; report pilot P&L separately; the
+strategy is adopted only when the forward record and the backtest pass the full hurdles together.

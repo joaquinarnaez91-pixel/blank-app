@@ -79,7 +79,7 @@ only for the large gaps. Traded every day, the rule "buy the K largest gap-downs
 - K=5: +10 bp/day (t 1.5) in the holdout and +2.9 bp/day (t 0.3) in 2024-26.
 - At 20 bp costs: about zero.
 
-**Rejected as an every-day rule.** The same rule restricted to cash days is section 5.
+**Rejected as an every-day rule.** The same rule restricted to cash days is section 6.
 
 ### Index via 3x funds, hourly (`index_day.py`, family A)
 - 36 diagnostic cells: gap z-bucket (gap / trailing 20-day gap std) x first-hour RV x entry time.
@@ -140,14 +140,43 @@ The fund return is synthetic: 3x the index from the prior close, daily reset, 5 
 ---
 
 ## 5. (c) Cross-sectional prediction of the 10:30 -> close return
-{{XSEC}}
+`xsec_hourly.py`: 1,610 stocks, 662,205 stock-days, median 950 names per day.
+
+**Fama-MacBeth** (all 710 days; slope = top-minus-bottom spread in bp; 24 tests):
+- **Main slopes:** no feature reaches \|NW t\| 2.
+  - log RV +2.3 bp (t 1.9); ATR% +5.0 (t 1.1); gap +1.4 (t 0.5); first hour -1.7 (t -0.9).
+  - prior-day return +1.4 (t 0.5); 5-day return -1.5 (t -0.6); distance to the 20-day high +0.3 (t 0.1);
+    dollar volume -0.2 (t -0.1).
+- **Interactions with SPY's first hour:** all \|t\| <= 1.5.
+- **Interactions with the prior VIX close:** gap -2.7, ATR% +2.3, distance to the 20-day high -2.2. These point the
+  same way as the reversal-in-turbulence mechanism of section 6, but none reaches 3.
+
+**Walk-forward models** (out of sample only: 460 days, Jan 22 2025 - Nov 18 2026; expanding window, refit every 21
+sessions, 5-session embargo):
+
+| Model | Rank IC (NW t) | Halves | Decile spread, gross (not long-only) | Top decile long, net 10 bp |
+|---|---|---|---|---|
+| LightGBM (ranks + raw + SPY first hour/gap) | +0.018 (2.4) | +0.025 / +0.012 | +7.0 bp (t 1.3) | -4.1 bp (t -0.9) |
+| LightGBM + VIX + 200-day regime | +0.024 (3.2) | +0.027 / +0.021 | +9.3 bp (t 1.6) | -3.3 bp (t -0.7) |
+| Linear (rolling Fama-MacBeth composite) | -0.005 (-0.6) | - | -6.3 bp | -12.9 bp (t -2.5) |
+
+**Long-only top-K** (whole shares, $1,000, 10 bp; 12 variants):
+- Best: LightGBM top-1 +1.9 bp/day (t 0.2, DSR 0.08).
+- Every LightGBM portfolio lies between -7.1 and +1.9 bp/day; every linear one loses (-14.7 to -32.4 bp).
+- On SPY-below-200d days (n=55) the LightGBM portfolios were positive (+13 to +71 bp, not significant).
+
+**Verdict:** rejected for trading.
+- The VIX/regime model's ranking skill is statistically real (IC t 3.2), but it lives in the long-short spread
+  (about 9 bp a day gross).
+- The long side does not clear costs, and short sales are not allowed.
 
 ---
 
 ## 6. Candidate: cash-day gap-down reversal (`gaps_daily_holdout.py`, `gd_regime.py`, `gd_checks.py`, `final_eval.py`)
 
 **How it was found.** In the hourly sample, "buy the 5 largest gap-downs at the open" split by the 200-day regime
-showed +87 bp per SPY-below-200d day (t 2.0, 55 days). The same split on the untouched 2017-2023 daily holdout
+showed +87 bp per SPY-below-200d day (t 2.0, 55 days) on the first ~550 stocks downloaded. On the full 1,610-stock
+universe it is +46 bp (t 0.9). The same split on the untouched 2017-2023 daily holdout
 (4 K-variants, all positive) gave **K=5: +59 bp per cash day, t 3.1**. The 36-cell grid that followed is counted
 as trials:
 - universe {base, large caps}
@@ -252,7 +281,8 @@ Costs at 20 / 30 bp (SPY version): t 2.79 / 2.31, DSR 0.58 / 0.38 (null) and 0.8
 | gaps_intraday | Stock gaps x first-hour RV -> same-day continuation/reversal (hourly, 710 days) | 55 | rejected |
 | gaps_intraday | Cash-day gap-down reversal: execution, risk, mechanism and attribution checks | 5 | promising |
 | gaps_intraday | Cash-day gap-down reversal: entry-time sensitivity (hourly 9:30 vs 10:30; 5-min 9:30-10:30) | 0 | promising |
-{{XSEC_REG}}
+| xsec_intraday | Fama-MacBeth: 10:30 features -> 10:30-close return (hourly, 710 days) | 24 | rejected |
+| xsec_intraday | Walk-forward LightGBM + linear FM composite, long-only top-K 10:30->close | 12 | rejected |
 
 Note: the record named "Holdout (2017-2023 daily bars)..." actually used daily bars from 1993 (SPY), 1999 (QQQ) and 2000 (IWM) to Dec 20 2023.
 
