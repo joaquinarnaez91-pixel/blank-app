@@ -13,8 +13,8 @@ Over 2017-2026 daily bars it earned **+58 bp per cash day** net of 10 bp costs.
 - Returns rise steadily with VIX, as the published liquidity-provision evidence predicts (Nagel 2012).
 - It is not explained by market beta: alpha +53 bp per day, t 3.4.
 
-It falls short of the strict deflated-Sharpe hurdle when every trial in the family is counted (about 0.8), and the
-large-cap version earns about half as much. Today's-listing survivorship is therefore the main open risk. Verdict:
+It falls short of the strict deflated-Sharpe hurdle when all 122 trials in the family are counted (0.87 for the
+realistic version), and the large-cap version earns about half as much. Today's-listing survivorship is therefore the main open risk. Verdict:
 **promising, not adopted.** Exact rules are in section 6.
 
 ---
@@ -24,7 +24,7 @@ large-cap version earns about half as much. Today's-listing survivorship is ther
 | Item | Detail |
 |---|---|
 | Hourly bars | Yahoo 1h, Dec 21 2023 - Nov 18 2026 (730 sessions). Bars start 9:30, 10:30, ... 15:30 (the last bar is 30 min). Only full 7-bar sessions are traded; early-close days and sessions with missing bars are flat. |
-| Stock universe | `trader/data/superset.json` (1,651 liquid US stocks/ADRs, today's listing), fetched here with `intraday_hourly/fetch.py` (3 threads, resumable). {{FETCH}} |
+| Stock universe | `trader/data/superset.json` (1,651 liquid US stocks/ADRs, today's listing), fetched here with `intraday_hourly/fetch.py` (3 threads, resumable). Result: 1,617 of 1,651 fetched. 34 failed with HTTP 422; these were listed less than 730 days ago (e.g. GEV, RDDT, NBIS). The panel keeps the 1,610 stocks with at least 500 hourly bars. |
 | Index / 3x funds | SPY, QQQ, IWM with UPRO/SPXU, TQQQ/SQQQ, TNA/TZA (hourly, cached). |
 | Daily bars | SPY 1993+, QQQ 1999+, IWM 2000+ (index holdouts); the same 1,651 stocks Nov 2016+ (cached by another session), used for the 2017-2023 holdout of open-to-close stock rules. |
 | Point in time | Daily inputs use days <= t-1 (14-day volume/ATR, 20-day high, 5-day return, 200-day SMA of the prior close). First-hour inputs (relative volume RV = 9:30-bar volume / its 14-day mean, first-hour return, SPY first hour) are used only for trades entered at the 10:30 open or later. |
@@ -45,7 +45,23 @@ Stocks that collapsed below $5 or were delisted in 2017-2026 are missing.
 ## 2. (a) Overnight gaps: continuation vs reversal
 
 ### Stocks, hourly bars (2024-26)
-{{GAPS_HOURLY}}
+`gaps.py`: 1,610 stocks, 710 sessions; universe = prior close >= $5 and 14-day volume >= 1M shares.
+
+- **35 cells** (gap bucket x first-hour RV x entry time). No cell's excess return over the universe reaches
+  \|NW t\| 2.5.
+  - At the 9:30 entry the daily-bar reversal shows again: gap-downs of -4..-2% earn +10.3 bp excess (t 2.0);
+    gap-ups of +2..4% earn -9.8 bp (t -2.1) and gap-ups beyond +4% earn -19.1 bp (t -1.8).
+  - **RV does not separate news from non-news gaps.** Gap-downs beyond -4% with RV >= 4 earn +19 bp (t 1.9);
+    gap-ups beyond +4% with RV >= 4 earn +8.7 bp (t 0.9).
+- **20 long-only top-K rules.**
+  - Best: buy the 10 largest gap-downs (<= -2%) at the 9:30 open: +17.6 bp/day, t 2.0, Sharpe 1.21, DSR 0.45,
+    halves +12 / +23 bp.
+  - Every 10:30-entry rule is at or below +1.5 bp/day on all days. Gap-downs bought at 10:30 (K=5): -3.9 bp,
+    t -0.5. News gap-ups (gap >= 2%, RV >= 2, K=5): -7.0 bp, t -1.2.
+  - On SPY-below-200d days (55) the 10:30 gap-down rules were positive (+44 to +59 bp per day, t 1.4-2.0),
+    consistent with section 6.
+
+**Verdict:** rejected as every-day rules.
 
 ### Stocks, daily bars: gap buckets, 9:30 open -> close (`gaps_daily_holdout.py`)
 Daily equal-weight means, raw (before costs). The holdout is 2017 to Dec 20 2023.
@@ -77,7 +93,18 @@ only for the large gaps. Traded every day, the rule "buy the K largest gap-downs
 ---
 
 ## 3. (b) Stocks in play, hourly (60-minute opening range)
-{{SIP}}
+`sip_hourly.py`: 1,610 stocks, 710 sessions, median 122 eligible names per day.
+
+- **16 variants:** K {1, 3, 5, 10} x entry {10:30 open, buy-stop one cent above the first-hour high} x stop
+  {first-hour low, none}.
+- **Best:** K=1, 10:30 open, no stop: +5.6 bp/day, t 0.37, Sharpe 0.22, DSR 0.03 (56 family trials, including the
+  40 of the 5-minute study); halves -6 / +17 bp.
+- Every K >= 3 variant is negative. Buy-stop breakouts lose significantly (K=10: -11.8 bp/day, t -3.3).
+- **RV control** (per trade, 10:30 open, no stop, net 10 bp): RV 1-1.5 -9.4 bp; 1.5-2 -6.6; 2-3 -5.5; 3-5 -1.5;
+  5+ +0.7. Higher RV helps but never clears costs.
+- **SPY-below-200d days:** positive but insignificant (K=1 +39 bp, t 0.7; K=5 +27 bp, t 0.9).
+
+**Verdict:** rejected, now on 710 sessions instead of 45.
 
 ---
 
@@ -153,10 +180,35 @@ Pre-specified cell: base universe, gap <= -2%, K = 5, SPY < 200d, 10 bp; 2,492 d
 | Attribution on cash days (gross) | Picks beat the universe average by +54.5 bp (NW t 3.5). Beta to SPY open->close 1.26, alpha +53 bp (t 3.4). Placebos: largest gap-UPs -36 bp (t -2.6); random flat-open stocks +1 bp (t 0.3). |
 | ADRs | Excluding the 83 ADRs: +57.5 bp (t 3.3, holdout t 3.0). ADRs only: +10 bp. Not an ADR artifact. |
 | Picks | median price $23, median gap -6.2%, median $ADV $110M (8% below $20M). Return rises with gap size: -2..-4% +10 bp, -4..-8% +57 bp, -8..-15% +113 bp, beyond -15% +116 bp. |
-| Timing (hourly, 2024-26 cash days) | {{GD_HOURLY}} |
+| Timing (hourly, 2024-26 cash days) | Same picks chosen at the open; only the entry time changes (equal-weight top 5, net 10 bp; `entry_timing.py`).<br>**Hourly, SPY-below-200d days (n=55):** 9:30 open +52.8 bp/day (t 0.95); 10:30 open +44.9 (t 1.3), so about 85% survives. The picks moved only +7.6 bp from 9:30 to 10:30 and +55 bp from 10:30 to the close.<br>**Any leg in cash (n=120):** +43.0 vs +30.7 (about 71%). Other days (n=582): +1.6 vs -15.3.<br>**5-minute bars** (46 sessions, Sep 16 - Nov 18 2026): no SPY-below-200d day. On 18 days with some leg in cash, entries at 9:30 / 9:35 / 9:45 / 10:00 / 10:30 gave +37 / +53 / +20 / +31 / +54 bp/day, all t < 0.8: too few days to measure the decay. |
 
 ### Hurdle check (`final_eval.py`)
-{{FINAL_EVAL}}
+Strict version: DSR uses all 122 trials this agent logged in the `gaps_intraday` family. The null Sharpe
+variance is 252/n; the empirical variance across the 36 regime cells is shown alongside.
+
+| | SPY < 200d, full $1,000 | Capital freed by the overnight model (thirds) |
+|---|---|---|
+| Days / active days | 2,492 / 433 | 2,492 / 812 |
+| Mean | +10.3 bp/day (+59 per cash day) | +11.1 bp/day (+34 per active day) |
+| t / NW t | 3.27 / 3.30 | **3.60 / 3.70** |
+| Sharpe (annualized, all days) | 1.04 | 1.15 |
+| DSR, 122 trials, null variance 0.101 | 0.77 | **0.87** |
+| DSR, empirical variance 0.052 | 0.94 | 0.97 |
+| Halves (active days, chronological) | +75 / +43 bp | +35 / +33 bp |
+| Holdout 2017-2023 / 2024-26 (NW t) | 3.07 / 1.11 | 3.24 / 1.77 |
+| Whole-sleeve return / max drawdown | +25.7%/yr / -30.9% (Aug 16 - Oct 11 2022) | +28.5%/yr / -30.4% |
+| By year | 2018 +9%, 2019 +25%, 2020 +28%, 2022 +211%, 2023 +37%, 2025 +23%, 2026 +5% | 2017 -1%, 2018 +3%, 2019 +24%, 2020 +36%, 2021 +12%, 2022 +191%, 2023 +40%, 2025 +35%, 2026 +13% |
+
+Costs at 20 / 30 bp (SPY version): t 2.79 / 2.31, DSR 0.58 / 0.38 (null) and 0.84 / 0.68 (empirical).
+
+**Hurdles:**
+- **t:** passes. t > 3 at 10 bp, with a strong published prior on top.
+- **Halves:** passes; same sign in both, and holdout-confirmed.
+- **DSR > 0.9:** fails under the strict family count with the null variance (0.77-0.87). It passes with the
+  empirical variance, or when counting only the 4 variants carried into the untouched holdout (about 0.99).
+- **Concentration:** 2022 (212 cash days) supplies most of the compounded gain.
+
+**Verdict: promising, not adopted.**
 
 ### Exact rules for a forward test (not adopted; for the main session to decide)
 1. **When.** Trade only on day t when at least one leg of the overnight model was in cash the night before, i.e. the
@@ -164,10 +216,16 @@ Pre-specified cell: base universe, gap <= -2%, K = 5, SPY < 200d, 10 bp; 2,492 d
    Capital C = settled cash the overnight model did not commit (backtest: $1,000 x legs in cash / 3).
 2. **Universe** (computed before the open from daily bars through t-1): stocks in `trader/data/superset.json` with
    prior close >= $5 and 14-day average daily volume >= 1,000,000 shares.
-3. **Signal** at 9:30-9:31: gap = today's opening price / prior close - 1. Candidates have gap <= -2%. Rank by
+3. **Signal** after the open: gap = today's official opening price / prior close - 1. Candidates have gap <= -2%. Rank by
    gap, most negative first. Skip any name priced above C/5. Take the first 5.
-4. **Entry.** For each, buy floor((C/5) / price) shares with a market order (or a marketable limit at ask + 0.3%)
-   in the first minutes after the open.
+4. **Entry at 9:45**, the earliest the sleeve's rules allow (`no_entries_before`). For each name, buy
+   floor((C/5) / price) shares with a marketable limit at ask + 0.3%. The picks are still chosen by the gap at the
+   open.
+   - Evidence for the delay: on 2024-26 cash days a 10:30 entry kept about 85% (SPY in cash, n=55) and about 71%
+     (any leg in cash, n=120) of the opening-print return.
+   - A 9:45 entry should sit between those two points. Plan on roughly +40 to +50 bp per cash day before
+     survivorship, against +58 bp at the opening print.
+   - The 5-minute data has too few cash days (18) to measure 9:45 directly.
 5. **Protection.** A day stop-market order 8% below each fill. This keeps the loss per $200 position near $16-20,
    well inside $100/trade and $200/day.
 6. **Exit.** Sell everything with market orders at 15:55. If the overnight model re-enters that evening, its 15:58
@@ -179,7 +237,24 @@ Pre-specified cell: base universe, gap <= -2%, K = 5, SPY < 200d, 10 bp; 2,492 d
 ---
 
 ## 7. Registry entries (author agent-intraday-hourly)
-{{REGISTRY}}
+| Family | Experiment | Variants | Verdict |
+|---|---|---|---|
+| index_daytime_hourly | Index gap -> same-day continuation vs reversal (z-buckets x first-hour RV), 3x funds | 52 | rejected |
+| index_daytime_hourly | Index day trades by 200-day regime (bull/bear 3x fund, 9:30 or 10:30 -> close) | 32 | rejected |
+| index_daytime_hourly | Rebound days below the 200-day (gap down / prior day down) via 3x bull funds | 24 | rejected |
+| index_daytime_hourly | Index gap fill after large overnight gaps via 3x funds (fill-or-close exits) | 64 | rejected |
+| index_daytime_hourly | Last-half-hour / 90-minute reversal of the day-so-far via 3x funds, by regime | 24 | rejected |
+| index_daytime_hourly | Holdout (2017-2023 daily bars) of the best index day rules | 24 | rejected |
+| index_daytime_hourly | Index gap-down fill (buy 3x bull at open, sell at prior close or close), long history | 64 | rejected |
+| gaps_intraday | Holdout 2017-2023 (daily bars): buy the largest stock gap-downs at the open, sell at the close | 26 | rejected |
+| gaps_intraday | Gap-down reversal only when SPY < 200-day (overnight model in cash), daily bars 2017-2026 | 36 | promising |
+| stocks_in_play | Hourly stocks-in-play (60-min range), long only, top-K by RV, whole shares | 16 | rejected |
+| gaps_intraday | Stock gaps x first-hour RV -> same-day continuation/reversal (hourly, 710 days) | 55 | rejected |
+| gaps_intraday | Cash-day gap-down reversal: execution, risk, mechanism and attribution checks | 5 | promising |
+| gaps_intraday | Cash-day gap-down reversal: entry-time sensitivity (hourly 9:30 vs 10:30; 5-min 9:30-10:30) | 0 | promising |
+{{XSEC_REG}}
+
+Note: the record named "Holdout (2017-2023 daily bars)..." actually used daily bars from 1993 (SPY), 1999 (QQQ) and 2000 (IWM) to Dec 20 2023.
 
 ## 8. Open questions for the next iteration
 1. **Survivorship.** The cash-day gap-down result needs a point-in-time universe that includes delisted names
