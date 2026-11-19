@@ -3,13 +3,17 @@
   python3 tools/overnight.py signal --capital 970 [--prices SPY=730.1,QQQ=659.5,IWM=270.1,UPRO=..,TQQQ=..,TNA=..]
       -> prints the decision and writes trader/overnight_plan.json (nothing is placed)
 
-Spec (adopted Nov 19, 2026; research: tools/research/README.md, registry family "overnight"):
-  legs: SPY->UPRO, QQQ->TQQQ, IWM->TNA, one third of the capital each.
+Spec (adopted Nov 19, 2026; cap and stress guard revised the same day from agent-overnight's validation,
+tools/research/reports/overnight.md; registry family "overnight"):
+  legs: SPY->UPRO, QQQ->TQQQ, IWM->TNA, one third of the capital each. Capital in a cash account = half the
+  sleeve per night (unsettled sale proceeds cannot be spent).
   hold a leg only if the index's live price is above its 200-day simple moving average (today's price counts
-  as today's close), exposure L = min(3, 0.015 / sigma20) where sigma20 is the sample std of the last 20 overnight
-  returns (open_t / close_t-1 - 1, today's open included); dollars in the 3x fund = capital/3 * L/3, whole shares.
-  stress check: every held index gaps down by max(5 x sigma20, 2.5%) at once; the loss must stay <= $100,
-  otherwise all legs are scaled down. Sell everything at the next 9:30 open (market order queued after 16:00).
+  as today's close), exposure L = min(2, 0.015 / sigma20) where sigma20 is the sample std of the last 20 overnight
+  returns (open_t / close_t-1 - 1, today's open included); dollars in the 3x fund = capital/3 * L/3; shares rounded
+  to the nearest whole share, rounded down if the total would exceed the capital.
+  stress guard: every held index gaps down at once by max(its worst overnight gap seen while above its 200-day
+  average [SPY 4.0%, QQQ 7.0%, IWM 5.3%], 5 x sigma20); the 3x loss must stay <= $100, else all legs scale down.
+  Sell everything at the next 9:30 open (market order queued after 16:00).
 """
 import sys, json, math, argparse, datetime
 from pathlib import Path
@@ -19,7 +23,8 @@ import yfetch
 from bars import frame, NY
 
 LEGS = [("SPY", "UPRO"), ("QQQ", "TQQQ"), ("IWM", "TNA")]
-TARGET, CAP, MAX_STRESS_LOSS = 0.015, 3.0, 100.0
+TARGET, CAP, MAX_STRESS_LOSS = 0.015, 2.0, 100.0
+WORST_GAP = {"SPY": 0.040, "QQQ": 0.070, "IWM": 0.053}   # point-in-time worst overnight gaps while above the 200-day
 
 
 def live_price(sym):
@@ -67,12 +72,17 @@ def main():
         sig = leg_signal(idx, p, today)
         fp = px.get(fund) or live_price(fund)
         dollars = a.capital / 3 * sig["exposure"] / 3
-        shares = int(dollars // fp)
-        gap = max(5 * sig["sigma20"], 0.025)
+        shares = int(round(dollars / fp))
+        gap = max(WORST_GAP[idx], 5 * sig["sigma20"])
         loss = shares * fp * 3 * gap
         stress += loss
         legs.append({**sig, "fund": fund, "fund_price": fp, "dollars_target": round(dollars, 2), "shares": shares,
                      "stress_gap": round(gap, 4), "stress_loss": round(loss, 2)})
+    while sum(l["shares"] * l["fund_price"] for l in legs) > a.capital + 0.01:   # nearest rounding overshot the cash
+        big = max((l for l in legs if l["shares"]), key=lambda l: l["shares"] * l["fund_price"] - l["dollars_target"])
+        big["shares"] -= 1
+        big["stress_loss"] = round(big["shares"] * big["fund_price"] * 3 * big["stress_gap"], 2)
+    stress = sum(l["stress_loss"] for l in legs)
     scale = 1.0
     if stress > MAX_STRESS_LOSS:
         scale = MAX_STRESS_LOSS / stress
