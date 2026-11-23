@@ -13,6 +13,7 @@ from bars import frame, NY
 
 HOLDINGS = {"NVDA", "TSM", "AMD", "CEG", "VST", "CCJ", "GLD", "SPCX", "IONQ", "SGOV", "VOO"}
 MAX_PRICE = 95.0
+MIN_LIVE_PRICE = 5.0  # backtest filters prev_close >= 5; also flag live prices under $5 (Nov 23 CAPR at $1.94)
 
 
 def avgv14(sym, before):
@@ -81,7 +82,7 @@ def main():
     json.dump(out, open(f"trader/gapdown_picks_{day.isoformat()}.json", "w"), indent=1)
     print(f"{day}: scanned {len(rows)} of {len(syms)}; {len(cands)} gap-downs <= -2% pass the filters. Top {a.top}:")
     for c in cands[:a.top]:
-        flag = "" if c["last"] <= MAX_PRICE else "  (above $95: skip)"
+        flag = "  (above $95: skip)" if c["last"] > MAX_PRICE else ("  (live price under $5: skip)" if c["last"] < MIN_LIVE_PRICE else "")
         print(f"  {c['sym']:<6} gap {100*c['gap']:+6.1f}%  prev ${c['prev_close']:.2f}  first ${c['first']:.2f}  now ${c['last']:.2f}  avg vol {c['avgv14']:,}{flag}")
 
 
